@@ -34,6 +34,8 @@ class ComPeopleControllerPerson extends ComActorsControllerDefault
 	 *
 	 * @return void
 	 */
+	 
+	 
 	public function __construct(KConfig $config)
 	{
 		parent::__construct($config);
@@ -113,7 +115,9 @@ class ComPeopleControllerPerson extends ComActorsControllerDefault
      * @return AnDomainEntityAbstract
      */
     protected function _actionAdd(KCommandContext $context)
-    {    	
+    {
+    	
+		    	
         //we are not saving this person but just validating it
         $person = parent::_actionAdd($context);
         $data   = $context->data;        
@@ -130,8 +134,31 @@ class ComPeopleControllerPerson extends ComActorsControllerDefault
                 ->addValidation('username','uniqueness')
                 ->addValidation('email',   'uniqueness')
                 ;
-                
+        
+		
+		/**************************PREVENTING DUPLICATION ENTRY OF USER******************************/
+		//ACQUIREING PROCESS BEGINS HERE
+		//prevent concurrent execution of user insertion using semaphore
+		$semaphore_conf = [
+							'KEY' => 123123,
+							'MAX_ACQUIRE' => 1,
+							'PERMISSION' => 0666,
+							'AUTO_RELEASE' => 1
+						];
+		$hSemaphore = sem_get($semaphore_conf['KEY'], 
+								$semaphore_conf['MAX_ACQUIRE'], 
+								$semaphore_conf['PERMISSION'], 
+								$semaphore_conf['AUTO_RELEASE']);
+		//blocks
+		sem_acquire($hSemaphore);  //blocking
+		//ACQUIRING PROCESS ENDS HERE
+
         if ( $person->validate() === false ) {
+        	
+        	/************SEMAPHORE RELEASING PROCESS BEGINS HERE*******************/
+			sem_release($hSemaphore);			//releasing
+			/************SEMAPHORE RELEASING PROCESS ENDS HERE*******************/
+			
             throw new AnErrorException($person->getErrors(), KHttpResponse::BAD_REQUEST);
         }
 
@@ -184,6 +211,11 @@ class ComPeopleControllerPerson extends ComActorsControllerDefault
         $user->set('registerDate', $date->toMySQL());        
         
         $user->save();
+		
+		/************SEMAPHORE RELEASING PROCESS BEGINS HERE*******************/
+		sem_release($hSemaphore);			//releasing
+		/************SEMAPHORE RELEASING PROCESS ENDS HERE*******************/
+		
         $person = $this->getRepository()->find(array('userId'=>$user->id));
         
         //if person is null then user has not been saved
